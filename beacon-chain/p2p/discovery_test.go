@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"net/netip"
 	"os"
 	"path"
 	"strconv"
@@ -315,7 +316,8 @@ func TestHostIsResolved(t *testing.T) {
 	// As defined in RFC 2606 , example.org is a
 	// reserved example domain name.
 	exampleHost := "example.org"
-	exampleIP := "93.184.216.34"
+	exampleIPv4 := "93.184.216.34"
+	exampleIPv6 := "2606:2800:220:1:248:1893:25c8:1946"
 
 	s := &Service{
 		cfg: &Config{
@@ -328,8 +330,22 @@ func TestHostIsResolved(t *testing.T) {
 	list, err := s.createListener(ip, key)
 	require.NoError(t, err)
 
-	newIP := list.Self().IP()
-	assert.Equal(t, exampleIP, newIP.String(), "Did not resolve to expected IP")
+	// As per as the libp2p documentation (https://github.com/libp2p/specs/blob/master/addressing/README.md)
+	// the first ip to be returned will be the preferred ip version
+	// this means that running the tests with an interface bound to an ipv4 expects the lookupIp[0] to be ipv4, otherwise ipv6. If none of the above,
+	// throw an error as the array should not be empty
+	lookupIP, err := net.LookupIP(exampleHost)
+	require.NoError(t, err)
+	require.NotEmpty(t, lookupIP, "Could not resolve host")
+
+	preferredIP, err := netip.ParseAddr(lookupIP[0].String())
+	require.NoError(t, err)
+
+	if preferredIP.Is4() {
+		assert.Equal(t, exampleIPv4, list.Self().IP().String(), "Did not resolve to expected IPv4")
+	} else {
+		assert.Equal(t, exampleIPv6, list.Self().IP().String(), "Did not resolve to expected IPv6")
+	}
 }
 
 func TestInboundPeerLimit(t *testing.T) {
